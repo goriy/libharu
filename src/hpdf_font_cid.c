@@ -712,12 +712,18 @@ MeasureText  (HPDF_Font          font,
                 tmp_len = i + 1;
                 if (real_width)
                     *real_width = w;
-            } else if (btype == HPDF_BYTE_TYPE_SINGLE ||
-                        btype == HPDF_BYTE_TYPE_LEAD) {
-                tmp_len = i;
-                if (real_width)
-                    *real_width = w;
-            }
+            } else {
+		if (btype == HPDF_BYTE_TYPE_SINGLE || btype == HPDF_BYTE_TYPE_LEAD) {
+		    tmp_len = i;
+		} else if (btype == HPDF_BYTE_TYPE_DOUBLE) {
+		    tmp_len = i-1;
+		} else if (btype == HPDF_BYTE_TYPE_TRIPLE) {
+		    tmp_len = i-2;
+		} else {
+		}
+		if (real_width)
+		    *real_width = w;
+	    }
         } else {
             if (HPDF_IS_WHITE_SPACE(b)) {
                 tmp_len = i + 1;
@@ -763,8 +769,9 @@ MeasureText  (HPDF_Font          font,
         w += (HPDF_REAL)((HPDF_DOUBLE)tmp_w * font_size / 1000);
 
         /* 2006.08.04 break when it encountered  line feed */
-        if (w > width || b == 0x0A)
-            return tmp_len;
+        if (w > width || b == 0x0A || b == 0x0D) {
+	    return tmp_len;
+	}
 
         if (HPDF_IS_WHITE_SPACE(b))
             last_btype = HPDF_BYTE_TYPE_TRIAL;
@@ -775,7 +782,6 @@ MeasureText  (HPDF_Font          font,
     /* all of text can be put in the specified width */
     if (real_width)
         *real_width = w;
-
     return len;
 }
 

@@ -92,32 +92,35 @@ UTF8_Encoder_ByteType_Func  (HPDF_Encoder        encoder,
     state->index++;
 
     HPDF_PTRACE ((" UTF8_Encoder_ByteType_Func - Byte: %hx\n", byte));
-
     if (utf8_attr->current_byte == 0) {
 	utf8_attr->utf8_bytes[0] = byte;
 	utf8_attr->current_byte = 1;
-
-	if (!(byte & 0x80)) {
+	if (!(byte & 0x80)) { /* single byte :: ascii etc.. */
 	    utf8_attr->current_byte = 0;
 	    utf8_attr->end_byte = 0;
 	    return HPDF_BYTE_TYPE_SINGLE;
 	}
 
-	if ((byte & 0xf8) == 0xf0)
+	if ((byte & 0xf8) == 0xf0) /* 4 BYTE */
 	    utf8_attr->end_byte = 3;
-	else if ((byte & 0xf0) == 0xe0)
+	else if ((byte & 0xf0) == 0xe0) /* 3 BYTE */
 	    utf8_attr->end_byte = 2;
-	else if ((byte & 0xe0) == 0xc0)
+	else if ((byte & 0xe0) == 0xc0) /* 2 BYTE */
 	    utf8_attr->end_byte = 1;
-	else
+	else {
 	    utf8_attr->current_byte = 0; //ERROR, skip this byte
+	}
     } else {
 	utf8_attr->utf8_bytes[utf8_attr->current_byte] = byte;
 	if (utf8_attr->current_byte == utf8_attr->end_byte) {
 	    utf8_attr->current_byte = 0;
+	    if (utf8_attr->end_byte == 1) {
+		return HPDF_BYTE_TYPE_DOUBLE;
+	    } else if (utf8_attr->end_byte == 2) {
+		return HPDF_BYTE_TYPE_TRIPLE;
+	    }
 	    return HPDF_BYTE_TYPE_SINGLE;
 	}
-
 	utf8_attr->current_byte++;
     }
 

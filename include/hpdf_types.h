@@ -554,6 +554,8 @@ typedef enum  _HPDF_EncoderType {
 
 typedef enum _HPDF_ByteType {
     HPDF_BYTE_TYPE_SINGLE = 0,
+    HPDF_BYTE_TYPE_DOUBLE = 1,
+    HPDF_BYTE_TYPE_TRIPLE = 2,
     HPDF_BYTE_TYPE_LEAD,
     HPDF_BYTE_TYPE_TRIAL,
     HPDF_BYTE_TYPE_UNKNOWN

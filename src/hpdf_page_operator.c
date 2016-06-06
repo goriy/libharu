@@ -2605,6 +2605,208 @@ HPDF_Page_TextRect  (HPDF_Page            page,
         return HPDF_OK;
 }
 
+HPDF_EXPORT(HPDF_UINT)
+HPDF_Page_TextRect2  (HPDF_Page            page,
+		      HPDF_REAL            left,
+		      HPDF_REAL            top,
+		      HPDF_REAL            right,
+		      HPDF_REAL            bottom,
+		      const char          *text,
+		      HPDF_TextAlignment   align,
+		      HPDF_UINT           *len
+		      )
+{
+    HPDF_STATUS ret = HPDF_Page_CheckState (page, HPDF_GMODE_TEXT_OBJECT);
+    HPDF_PageAttr attr;
+    const char *ptr = text;
+    HPDF_BOOL pos_initialized = HPDF_FALSE;
+    HPDF_REAL save_char_space = 0;
+    HPDF_BOOL is_insufficient_space = HPDF_FALSE;
+    HPDF_UINT num_rest;
+    HPDF_Box bbox;
+    HPDF_BOOL char_space_changed = HPDF_FALSE;
+    HPDF_UINT last_position = 0;
+    HPDF_UINT text_out = 0;
+    char buffer[4096];
+
+    HPDF_PTRACE ((" HPDF_Page_TextRect\n"));
+
+    if (ret != HPDF_OK)
+        return ret;
+
+    attr = (HPDF_PageAttr )page->attr;
+
+    /* no font exists */
+    if (!attr->gstate->font) {
+        return HPDF_RaiseError (page->error, HPDF_PAGE_FONT_NOT_FOUND, 0);
+    }
+
+    bbox = HPDF_Font_GetBBox (attr->gstate->font);
+
+    if (len)
+        *len = 0;
+    num_rest = HPDF_StrLen (text, HPDF_LIMIT_MAX_STRING_LEN + 1);
+
+    if (num_rest > HPDF_LIMIT_MAX_STRING_LEN) {
+        return HPDF_RaiseError (page->error, HPDF_STRING_OUT_OF_RANGE, 0);
+    } else if (!num_rest)
+        return HPDF_OK;
+
+    if (attr->gstate->text_leading == 0)
+        HPDF_Page_SetTextLeading (page, (bbox.top - bbox.bottom) / 1000 *
+                attr->gstate->font_size);
+
+    top = top - bbox.top / 1000 * attr->gstate->font_size +
+                attr->gstate->text_leading;
+    bottom = bottom - bbox.bottom / 1000 * attr->gstate->font_size;
+
+    if (align == HPDF_TALIGN_JUSTIFY) {
+        save_char_space = attr->gstate->char_space;
+        attr->gstate->char_space = 0;
+    }
+
+    HPDF_UINT line_len, tmp_len;
+    HPDF_BOOL wordWrap = HPDF_FALSE;
+    for (;;) {
+        HPDF_REAL x, y;
+        HPDF_REAL rw;
+        HPDF_BOOL LineBreak;
+
+        attr->gstate->char_space = 0;
+        line_len = tmp_len = HPDF_Page_MeasureText (page, ptr, right - left, wordWrap, &rw);
+        if (line_len == 0) {
+            is_insufficient_space = HPDF_TRUE;
+            break;
+        }
+
+        if (len)
+            *len += line_len;
+        num_rest -= line_len;
+
+        /* Shorten tmp_len by trailing whitespace and control characters. */
+        LineBreak = HPDF_FALSE;
+	HPDF_BOOL trimWhiteSpace = HPDF_FALSE;
+
+	while (tmp_len > 0 && HPDF_IS_WHITE_SPACE(ptr[tmp_len - 1])) {
+	    tmp_len--;
+	    trimWhiteSpace = HPDF_TRUE;
+	    if (ptr[tmp_len] == 0x0A || ptr[tmp_len] == 0x0D) {
+		LineBreak = HPDF_TRUE;
+	    }
+	}
+
+	if (!wordWrap && tmp_len > 0) {
+	    if (ptr[tmp_len] == 0x0A || ptr[tmp_len] == 0x0D) {
+		LineBreak = HPDF_TRUE;
+	    }
+	    if (ptr[tmp_len] == 0) {
+		tmp_len--;
+	    }
+	}
+	/* strncpy(buffer, ptr, tmp_len); */
+	/* printf("line: %s_\n", buffer); */
+	/* memset(buffer, 0, sizeof(buffer)); */
+
+        switch (align) {
+
+            case HPDF_TALIGN_RIGHT:
+                TextPos_AbsToRel (attr->text_matrix, right - rw, top, &x, &y);
+                if (!pos_initialized) {
+                    pos_initialized = HPDF_TRUE;
+                } else {
+                    y = 0;
+                }
+                if ((ret = HPDF_Page_MoveTextPos (page, x, y)) != HPDF_OK)
+                    return ret;
+                break;
+
+            case HPDF_TALIGN_CENTER:
+                TextPos_AbsToRel (attr->text_matrix, left + (right - left - rw) / 2, top, &x, &y);
+                if (!pos_initialized) {
+                    pos_initialized = HPDF_TRUE;
+                } else {
+                    y = 0;
+                }
+                if ((ret = HPDF_Page_MoveTextPos (page, x, y)) != HPDF_OK)
+                    return ret;
+                break;
+
+            case HPDF_TALIGN_JUSTIFY:
+                if (!pos_initialized) {
+                    pos_initialized = HPDF_TRUE;
+                    TextPos_AbsToRel (attr->text_matrix, left, top, &x, &y);
+                    if ((ret = HPDF_Page_MoveTextPos (page, x, y)) != HPDF_OK)
+                        return ret;
+                }
+
+                /* Do not justify last line of paragraph or text. */
+                if (LineBreak || num_rest <= 0) {
+                    if ((ret = HPDF_Page_SetCharSpace (page, save_char_space))
+                                    != HPDF_OK)
+                        return ret;
+                    char_space_changed = HPDF_FALSE;
+                } else {
+                    HPDF_REAL x_adjust;
+                    HPDF_ParseText_Rec state;
+                    HPDF_UINT i = 0;
+                    HPDF_UINT num_char = 0;
+                    HPDF_Encoder encoder = ((HPDF_FontAttr)attr->gstate->font->attr)->encoder;
+                    const char *tmp_ptr = ptr;
+                    HPDF_Encoder_SetParseText (encoder, &state, (HPDF_BYTE *)tmp_ptr, tmp_len);
+                    while (*tmp_ptr) {
+                        HPDF_ByteType btype = HPDF_Encoder_ByteType (encoder, &state);
+                        if (btype != HPDF_BYTE_TYPE_TRIAL)
+                            num_char++;
+                        i++;
+                        if (i >= tmp_len)
+                            break;
+                        tmp_ptr++;
+                    }
+
+                    x_adjust = num_char == 0 ? 0 : (right - left - rw) / (num_char - 1);
+                    if ((ret = HPDF_Page_SetCharSpace (page, x_adjust)) != HPDF_OK)
+                        return ret;
+                    char_space_changed = HPDF_TRUE;
+                }
+                break;
+
+            default:
+                if (!pos_initialized) {
+                    pos_initialized = HPDF_TRUE;
+                    TextPos_AbsToRel (attr->text_matrix, left, top, &x, &y);
+                    if ((ret = HPDF_Page_MoveTextPos (page, x, y)) != HPDF_OK)
+                        return ret;
+                }
+        }
+
+        if (InternalShowTextNextLine (page, ptr, tmp_len) != HPDF_OK) {
+	    text_out += tmp_len;
+            return HPDF_CheckError (page->error);
+	}
+
+        if (num_rest <= 0)
+            break;
+
+        if (attr->text_pos.y - attr->gstate->text_leading < bottom) {
+            is_insufficient_space = HPDF_TRUE;
+            break;
+        }
+
+        ptr += line_len;
+    }
+
+    if (char_space_changed && save_char_space != attr->gstate->char_space) {
+        if ((ret = HPDF_Page_SetCharSpace (page, save_char_space)) != HPDF_OK)
+            return ret;
+    }
+
+    if (is_insufficient_space)
+        return (ptr - text) + text_out;
+    else
+        return HPDF_OK;
+}
+
+
 
 static HPDF_STATUS
 InternalShowTextNextLine  (HPDF_Page    page,
@@ -2830,7 +3032,7 @@ HPDF_Page_New_Content_Stream  (HPDF_Page page,
 
     /* check if there is already an array of contents */
     contents_array = (HPDF_Array) HPDF_Dict_GetItem(page,"Contents", HPDF_OCLASS_ARRAY);
-    if (!contents_array) {	
+    if (!contents_array) {
         HPDF_Error_Reset (page->error);
         /* no contents_array already -- create one
            and replace current single contents item */
@@ -2851,7 +3053,7 @@ HPDF_Page_New_Content_Stream  (HPDF_Page page,
 
     ret += HPDF_Array_Add (contents_array,attr->contents);
 
-    /* return the value of the new stream, so that 
+    /* return the value of the new stream, so that
        the application can use it as a shared contents stream */
     if (ret == HPDF_OK && new_stream != NULL)
         *new_stream = attr->contents;
@@ -2879,7 +3081,7 @@ HPDF_Page_Insert_Shared_Content_Stream  (HPDF_Page page,
 
     /* check if there is already an array of contents */
     contents_array = (HPDF_Array) HPDF_Dict_GetItem(page,"Contents", HPDF_OCLASS_ARRAY);
-    if (!contents_array) {	
+    if (!contents_array) {
         HPDF_PageAttr attr;
         HPDF_Error_Reset (page->error);
         /* no contents_array already -- create one
