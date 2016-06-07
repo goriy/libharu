@@ -1572,7 +1572,7 @@ HPDF_Page_TextRect  (HPDF_Page            page,
                      HPDF_TextAlignment   align,
                      HPDF_UINT           *len);
 
-HPDF_EXPORT(HPDF_UINT)
+HPDF_EXPORT(HPDF_STATUS)
 HPDF_Page_TextRect2  (HPDF_Page            page,
 		      HPDF_REAL            left,
 		      HPDF_REAL            top,

@@ -2605,7 +2605,7 @@ HPDF_Page_TextRect  (HPDF_Page            page,
         return HPDF_OK;
 }
 
-HPDF_EXPORT(HPDF_UINT)
+HPDF_EXPORT(HPDF_STATUS)
 HPDF_Page_TextRect2  (HPDF_Page            page,
 		      HPDF_REAL            left,
 		      HPDF_REAL            top,
@@ -2626,8 +2626,6 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
     HPDF_Box bbox;
     HPDF_BOOL char_space_changed = HPDF_FALSE;
     HPDF_UINT last_position = 0;
-    HPDF_UINT text_out = 0;
-    char buffer[4096];
 
     HPDF_PTRACE ((" HPDF_Page_TextRect\n"));
 
@@ -2656,10 +2654,11 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
         HPDF_Page_SetTextLeading (page, (bbox.top - bbox.bottom) / 1000 *
                 attr->gstate->font_size);
 
-    top = top - bbox.top / 1000 * attr->gstate->font_size +
-                attr->gstate->text_leading;
-    bottom = bottom - bbox.bottom / 1000 * attr->gstate->font_size;
+    HPDF_INT ascent = HPDF_Font_GetAscent(attr->gstate->font);
+    HPDF_INT descent = HPDF_Font_GetDescent(attr->gstate->font);
 
+    top = top - (ascent - descent) / 1000 * attr->gstate->font_size + attr->gstate->text_leading;
+    bottom = bottom - (ascent - descent) / 1000 * attr->gstate->font_size + attr->gstate->text_leading;
     if (align == HPDF_TALIGN_JUSTIFY) {
         save_char_space = attr->gstate->char_space;
         attr->gstate->char_space = 0;
@@ -2703,9 +2702,6 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
 		tmp_len--;
 	    }
 	}
-	/* strncpy(buffer, ptr, tmp_len); */
-	/* printf("line: %s_\n", buffer); */
-	/* memset(buffer, 0, sizeof(buffer)); */
 
         switch (align) {
 
@@ -2780,7 +2776,6 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
         }
 
         if (InternalShowTextNextLine (page, ptr, tmp_len) != HPDF_OK) {
-	    text_out += tmp_len;
             return HPDF_CheckError (page->error);
 	}
 
@@ -2801,7 +2796,7 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
     }
 
     if (is_insufficient_space)
-        return (ptr - text) + text_out;
+        return HPDF_PAGE_INSUFFICIENT_SPACE;
     else
         return HPDF_OK;
 }
