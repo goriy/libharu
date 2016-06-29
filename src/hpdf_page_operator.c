@@ -2698,11 +2698,8 @@ HPDF_Page_TextRect2  (HPDF_Page            page,
 	    if (ptr[tmp_len] == 0x0A || ptr[tmp_len] == 0x0D) {
 		LineBreak = HPDF_TRUE;
 	    }
-	    if (ptr[tmp_len] == 0) {
-		tmp_len--;
-	    }
 	}
-
+	
         switch (align) {
 
             case HPDF_TALIGN_RIGHT:
